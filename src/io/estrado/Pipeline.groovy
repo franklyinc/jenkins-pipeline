@@ -5,7 +5,31 @@ def kubectlTest() {
     // Test that kubectl can correctly communication with the Kubernetes API
     println "checking kubectl connnectivity to the API"
     sh "kubectl get nodes"
+}
 
+def buildDockerImage(appName, buildId) {
+    stage('Build Docker Image') {
+        container('docker') {
+            sh "docker build -t vemba/${appName}:${buildId} ."
+            echo "Image built"
+        }
+    }
+}
+
+def getPodLabel(cloud) {
+    return "pipeline-$cloud-${UUID.randomUUID().toString()}"
+}
+
+def getCloud(branch) {
+    if (branch == 'master' ) {
+        cloud = "kubernetes"
+    } else if (branch == 'staging' ) {
+        cloud = "kubernetes-staging"
+    } else {
+        cloud = "kubernetes-dev"
+    }
+    println "Cloud: ${cloud}"
+    return cloud;
 }
 
 def helmLint(String chart_dir) {
@@ -13,6 +37,18 @@ def helmLint(String chart_dir) {
     println "running helm lint ${chart_dir}"
     sh "helm lint ${chart_dir}"
 
+}
+
+def manualPromotion(String job_name, String build_number, String build_url, Integer timeout = 1440) {
+    // we need a first milestone step so that all jobs entering this stage are tracked an can be aborted if needed
+    milestone 1
+    slackSend (color: '#ffff66', message: "QA IN PROCESS: Job '${job_name} [${build_number}]' (${build_url})")
+    // time out manual approval after ten minutes
+    timeout(time: timeout, unit: 'MINUTES') {
+        input message: "QA completed sucessfully?"
+    }
+    // this will kill any job which is still in the input step
+    milestone 2
 }
 
 def helmConfig() {

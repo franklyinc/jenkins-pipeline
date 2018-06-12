@@ -17,7 +17,7 @@ def buildDockerImage(appName, buildId) {
 }
 
 def getPodLabel(cloud) {
-    return "pipeline-$cloud-${UUID.randomUUID().toString()}".substring(0,62)
+    return "pipeline-$cloud-${UUID.randomUUID().toString()}".take(62)
 }
 
 def getCloud(branch) {

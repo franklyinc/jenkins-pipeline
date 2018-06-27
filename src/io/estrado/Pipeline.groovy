@@ -26,7 +26,7 @@ def getCloud(branch) {
     } else if (branch == 'staging' ) {
         cloud = "kubernetes-staging"
     } else {
-        cloud = "kubernetes-dev"
+        cloud = "kubernetes-staging"
     }
     println "Cloud: ${cloud}"
     return cloud;

@@ -5,7 +5,33 @@ def kubectlTest() {
     // Test that kubectl can correctly communication with the Kubernetes API
     println "checking kubectl connnectivity to the API"
     sh "kubectl get nodes"
+}
 
+def buildDockerImage(appName, buildId) {
+    stage('Build Docker Image') {
+        container('docker') {
+            sh "docker build -t vemba/${appName}:${buildId} ."
+            echo "Image built"
+        }
+    }
+}
+
+def getPodLabel(cloud) {
+    return "pipeline-$cloud-${UUID.randomUUID().toString()}".take(62)
+}
+
+def getCloud(branch) {
+    if (branch == 'master' ) {
+        cloud = "kubernetes"
+    } else if (branch == 'staging' ) {
+        cloud = "kubernetes-staging"
+    } else if (branch == 'staging-new' ) {
+        cloud = "kubernetes-staging-new"
+    } else {
+        cloud = "kubernetes-dev"
+    }
+    println "Cloud: ${cloud}"
+    return cloud;
 }
 
 def helmLint(String chart_dir) {
@@ -13,6 +39,18 @@ def helmLint(String chart_dir) {
     println "running helm lint ${chart_dir}"
     sh "helm lint ${chart_dir}"
 
+}
+
+def manualPromotion(String job_name, String build_number, String build_url, Integer timeout = 1440) {
+    // we need a first milestone step so that all jobs entering this stage are tracked an can be aborted if needed
+    milestone 1
+    slackSend (color: '#ffff66', message: "QA IN PROCESS: Job '${job_name} [${build_number}]' (${build_url})")
+    // time out manual approval after ten minutes
+    timeout(time: timeout, unit: 'MINUTES') {
+        input message: "QA completed sucessfully?"
+    }
+    // this will kill any job which is still in the input step
+    milestone 2
 }
 
 def helmConfig() {
@@ -27,6 +65,10 @@ def helmConfig() {
 def helmDeploy(Map args) {
     //configure helm client and confirm tiller process is installed
     helmConfig()
+    def String release_overrides = ""
+    if (args.set) {
+      release_overrides = getHelmReleaseOverrides(args.set)
+    }
 
     def String namespace
 
@@ -40,15 +82,12 @@ def helmDeploy(Map args) {
     if (args.dry_run) {
         println "Running dry-run deployment"
 
-        sh "helm upgrade --dry-run --install ${args.name} ${args.chart_dir} --set imageTag=${args.version_tag},replicas=${args.replicas},cpu=${args.cpu},memory=${args.memory},ingress.hostname=${args.hostname} --namespace=${namespace}"
+        sh "helm upgrade --dry-run --install ${args.name} ${args.chart_dir} " + (release_overrides ? "--set ${release_overrides}" : "") + " --namespace=${namespace}"
     } else {
         println "Running deployment"
 
-        // reimplement --wait once it works reliable
-        sh "helm upgrade --install ${args.name} ${args.chart_dir} --set imageTag=${args.version_tag},replicas=${args.replicas},cpu=${args.cpu},memory=${args.memory},ingress.hostname=${args.hostname} --namespace=${namespace}"
-
-        // sleeping until --wait works reliably
-        sleep(20)
+        sh "helm dependency update ${args.chart_dir}"
+        sh "helm upgrade --install ${args.name} ${args.chart_dir} " + (release_overrides ? "--set ${release_overrides}" : "") + " --namespace=${namespace}"
 
         echo "Application ${args.name} successfully deployed. Use helm status ${args.name} to check"
     }
@@ -57,7 +96,7 @@ def helmDeploy(Map args) {
 def helmDelete(Map args) {
         println "Running helm delete ${args.name}"
 
-        sh "helm delete ${args.name}"
+        sh "helm delete --purge ${args.name}"
 }
 
 def helmTest(Map args) {
@@ -91,6 +130,7 @@ def gitEnvVars() {
 
 def containerBuildPub(Map args) {
 
+    retry(3) {
     println "Running Docker build/publish: ${args.host}/${args.acct}/${args.repo}:${args.tags}"
 
     docker.withRegistry("https://${args.host}", "${args.auth_id}") {
@@ -103,6 +143,7 @@ def containerBuildPub(Map args) {
         }
 
         return img.id
+    }
     }
 }
 
@@ -185,4 +226,30 @@ def getMapValues(Map map=[:]) {
     }
 
     return map_values
+}
+
+@NonCPS
+def getHelmReleaseOverrides(Map map=[:]) {
+    // jenkins and workflow restriction force this function instead of map.each(): https://issues.jenkins-ci.org/browse/JENKINS-27421
+    def options = ""
+    map.each { key, value ->
+        options += "$key=$value,"
+    }
+
+    return options
+}
+
+def String getDomainName(String url) throws URISyntaxException {
+    URI uri = new URI(url);
+    String domain = uri.getHost();
+    return domain.startsWith("www.") ? domain.substring(4) : domain;
+}
+
+def String getSubDomainName(String domain) {
+    return domain.substring(domain.indexOf('.') + 1);
+}
+
+// Used to get the subdomain Jenkins is hosted on for new ingress resources.
+def String getSubDomainNameFromURL(String url) {
+    return getSubDomainName(getDomainName(url));
 }

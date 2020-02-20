@@ -23,12 +23,8 @@ def getPodLabel(cloud) {
 def getCloud(branch) {
     if (branch == 'master' ) {
         cloud = "kubernetes"
-    } else if (branch == 'staging' ) {
-        cloud = "kubernetes-staging"
-    } else if (branch == 'staging-new' ) {
-        cloud = "kubernetes-staging-new"
     } else {
-        cloud = "kubernetes-dev"
+        cloud = "kubernetes-staging"
     }
     println "Cloud: ${cloud}"
     return cloud;

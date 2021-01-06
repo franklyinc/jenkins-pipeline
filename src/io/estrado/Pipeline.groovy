@@ -52,7 +52,7 @@ def manualPromotion(String job_name, String build_number, String build_url, Inte
 def helmConfig() {
     //setup helm connectivity to Kubernetes API and Tiller
     println "initiliazing helm client"
-    sh "helm init --stable-repo-url https://charts.helm.sh/stable --service-account tiller"
+    sh "helm init --stable-repo-url https://charts.helm.sh/stable"
     println "checking client/server version"
     sh "helm version"
 }
